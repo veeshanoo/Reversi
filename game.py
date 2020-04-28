@@ -10,9 +10,9 @@ class Game:
     NR_ROW = 8
     NR_COL = 8
 
-    P_MAX = "1"
-    P_MIN = "2"
-    EMPTY = "#"
+    P_MAX = 1
+    P_MIN = 2
+    EMPTY = 0
 
     LEVEL = 1  # 1, 2, or 3
 
@@ -34,11 +34,19 @@ class Drawer:
     RED = (255, 102, 102)
     WHITE = (255, 255, 255)
     BLACK = (0, 0, 0)
+    GREY = (200, 200, 200)
 
     def __init__(self):
         pygame.init()
         pygame.display.set_caption('REVERSI GAME')
-        self.screen = pygame.display.set_mode(size=(Game.NR_COL * Drawer.CELL_WIDTH, Game.NR_ROW * Drawer.CELL_HEIGHT))
+        self.X_Min = 0
+        self.X_Max = Game.NR_COL * Drawer.CELL_WIDTH - 1
+        self.Y_Min = 0
+        self.Y_Max = Game.NR_ROW * Drawer.CELL_HEIGHT - 1
+        self.screen = pygame.display.set_mode(size=(self.X_Max + 1, self.Y_Max + 1))
+        self.clear_screen()
+
+    def clear_screen(self):
         self.screen.fill(Drawer.WHITE)
         pygame.display.update()
 
@@ -55,13 +63,31 @@ class Drawer:
     def draw_circle(self, color, center):
         pygame.draw.circle(self.screen, color, center, Drawer.CIRCLE_RADIUS)
 
+    def draw_line(self, color, a, b, width):
+        pygame.draw.line(self.screen, color, a, b, width)
+
     def draw(self, game_state):
+        self.screen.fill(Drawer.WHITE)
+
         for i in range(Game.NR_ROW):
             for j in range(Game.NR_COL):
                 if game_state.grid[i][j] == Game.P_MAX:
                     self.draw_circle(Drawer.BLUE, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
                 elif game_state.grid[i][j] == Game.P_MIN:
                     self.draw_circle(Drawer.RED, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
+
+        # valid moves
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                fl, _ = game_state.valid_move(i, j)
+                if fl is True:
+                    self.draw_circle(Drawer.GREY, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
+
+        for i in range(Game.NR_COL):
+            self.draw_line(Drawer.BLACK, (i * Drawer.CELL_WIDTH, 0), (i * Drawer.CELL_WIDTH, self.Y_Max), 3)
+
+        for i in range(Game.NR_ROW):
+            self.draw_line(Drawer.BLACK, (0, i * Drawer.CELL_HEIGHT), (self.X_Max, i * Drawer.CELL_HEIGHT), 3)
 
         pygame.display.update()
 
@@ -79,6 +105,12 @@ class GameState:
 
     def opponent(self):
         if self.current_player == Game.P_MAX:
+            return Game.P_MIN
+        else:
+            return Game.P_MAX
+
+    def opponent_player(self, player):
+        if player == Game.P_MAX:
             return Game.P_MIN
         else:
             return Game.P_MAX
@@ -194,9 +226,9 @@ class GameState:
         player_2_score = self.count_occurrence(Game.P_MIN)
 
         if player_1_score > player_2_score:
-            return "Player 1"
+            return Game.P_MAX
         elif player_2_score > player_1_score:
-            return "Player 2"
+            return Game.P_MIN
         elif player_1_score == player_2_score:
             return "Tie"
 
@@ -269,40 +301,119 @@ class AI:
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, player=0):
         self.game_state = GameState()
         self.drawer = Drawer()
+        self.AI = AI()
+        self.player = player
+
+    def get_grid_coordinates(self, mouse_coord):
+        x = mouse_coord[0] // self.drawer.CELL_WIDTH
+        y = mouse_coord[1] // self.drawer.CELL_HEIGHT
+
+        return y, x
 
     def run(self):
-        turn = 0
+        nr = 1
         while True:
-            self.drawer.console_print(self.game_state)
+            try:
+                nr = int(input("Algorithm type:\n  1) Press 1 for mini-max.\n  2) Press 2 for alpha_beta.\n"))
+                if 1 > nr > 2:
+                    print("Invalid algorithm choice. Please try again.")
+                    continue
+            except Exception as e:
+                print("Bad input format ({}). Please try again.".format(e))
+                continue
+            break
+        Game.ALGORITHM = nr - 1
+
+        while True:
+            try:
+                nr = int(input("Chose your color.\n  1) Press 1 for blue (you move first).\n  2) Press 2 for blue (AI moves first).\n"))
+                if 1 > nr > 2:
+                    print("Invalid color choice. Please try again.")
+                    continue
+            except Exception as e:
+                print("Bad input format ({}). Please try again.".format(e))
+                continue
+            break
+        self.player = nr
+        turn = self.player - 1
+
+        while True:
+            try:
+                nr = int(input("Chose your difficulty level\n  1) Press 1 for easy.\n  2) Press 2 for medium.\n  3) Press 3 for difficult.\n"))
+                if 1 > nr > 3:
+                    print("Invalid difficulty choice. Please try again.")
+                    continue
+            except Exception as e:
+                print("Bad input format ({}). Please try again.".format(e))
+                continue
+            break
+        Game.LEVEL = nr
+
+        game_over = False
+        while not game_over:
+            # self.drawer.console_print(self.game_state)
             self.drawer.draw(self.game_state)
 
             if self.game_state.is_final_state():
-                print("game over.")
-                print(self.game_state.get_winner())
-                break
+                game_over = True
+                continue
 
             if turn == 0:
-                try:
-                    x, y = map(int, input("give i and j\n\n").split(' '))
-                except Exception as e:
-                    print("invalid input format, please try again")
-                    continue
+                # try:
+                #     x, y = map(int, input("give i and j\n\n").split(' '))
+                # except Exception as e:
+                #     print("invalid input format, please try again")
+                #     continue
 
-                fl, self.game_state = self.game_state.make_move(x, y)
-                if fl is False:
-                    print("invalid move. please try again")
-                    continue
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        print("You quited game.\nBye.\n")
+                        return
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        mouse_coord = pygame.mouse.get_pos()
+                        x, y = self.get_grid_coordinates(mouse_coord)
+                        print(x, y)
 
-                turn = 1 - turn
+                        fl, self.game_state = self.game_state.make_move(x, y)
+                        if fl is False:
+                            print("Invalid move. Please try again\n")
+                            continue
+
+                        turn = 1 - turn
             else:
-                print("AI turn")
-                time.sleep(2)
-                _, self.game_state = AI().make_move(self.game_state)
+                print("AI's turn")
+                time.sleep(0.5)
+                _, self.game_state = self.AI.make_move(self.game_state)
                 turn = 1 - turn
             pass
+
+        print("Game over.")
+        winner = self.game_state.get_winner()
+        your_score = self.game_state.count_occurrence(self.player)
+        ai_score = self.game_state.count_occurrence(self.game_state.opponent_player(self.player))
+
+        if winner == "Tie":
+            print("Game over.\nTie.\n")
+            return
+
+        if self.player == winner:
+            print("You won with the score {}-{}.\n".format(your_score, ai_score))
+        else:
+            print("AI won with the score {}-{}.\n".format(ai_score, your_score))
+
+        exit_game = False
+        while not exit_game:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    exit_game = True
+                    break
+
+        pygame.quit()
+        print("You quited game.\nBye.\n")
 
 
 if __name__ == '__main__':
