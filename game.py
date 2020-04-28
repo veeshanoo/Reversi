@@ -103,9 +103,8 @@ class GameState:
 
         return False
 
-    # we check if grid is full
     def is_final_state(self):
-        return self.can_advance()
+        return not self.can_advance()
 
     def generate_new_state(self, lst):
         grid = cpy(self.grid)
@@ -146,49 +145,90 @@ class GameState:
     def count_occurrence(self, ch):
         return sum([line.count(ch) for line in self.grid])
 
+    def get_winner(self):
+        if self.is_final_state() is False:
+            return None
+
+        player_1_score = self.count_occurrence(Game.P_MAX)
+        player_2_score = self.count_occurrence(Game.P_MIN)
+
+        if player_1_score > player_2_score:
+            return "Player 1"
+        elif player_2_score > player_1_score:
+            return "Player 2"
+        elif player_1_score == player_2_score:
+            return "Tie"
+
+        return None
+
 
 class AI:
     def __init__(self):
         pass
 
     def mini_max(self, game_state, depth):
-        if depth == 0 or game_state.is_final_state():
-            return game_state.get_score()
+        if depth == 0 or game_state.is_final_state() is True:
+            return game_state.get_score(), game_state
+
         if game_state.current_player == Game.P_MAX:  # we maximize score
-            maximum = Game.MIN_SCORE
-            for new_state in game_state.generate_new_states():
-                maximum = max(maximum, self.mini_max(new_state, depth - 1))
-
-            return maximum
+            score = Game.MIN_SCORE
+            new_states = game_state.generate_new_states()
+            for new_state in new_states:
+                new_score, _ = self.mini_max(new_state, depth - 1)
+                if new_score > score:
+                    score = new_score
+                    game_state = new_state
         else:  # we minimize score
-            minimum = Game.MAX_SCORE
-            for new_state in game_state.generate_new_states():
-                minimum = min(minimum, self.mini_max(new_state, depth - 1))
+            score = Game.MAX_SCORE
+            new_states = game_state.generate_new_states()
+            for new_state in new_states:
+                new_score, _ = self.mini_max(new_state, depth - 1)
+                if new_score < score:
+                    score = new_score
+                    game_state = new_state
 
-            return minimum
+        return score, game_state
 
     def alpha_beta(self, game_state, depth, alpha, beta):
         if depth == 0 or game_state.is_final_state():
-            return game_state.get_score()
+            return game_state.get_score(), game_state
+
         if game_state.current_player == Game.P_MAX:  # we maximize score
-            maximum = Game.MIN_SCORE
-            for new_state in game_state.generate_new_states():
-                maximum = max(maximum, self.alpha_beta(new_state, depth - 1, alpha, beta))
-                alpha = max(maximum, alpha)
+            score = Game.MIN_SCORE
+            new_states = game_state.generate_new_states()
+            for new_state in new_states:
+                new_score, _ = self.alpha_beta(new_state, depth - 1, alpha, beta)
+                if new_score > score:
+                    score = new_score
+                    game_state = new_state
+                alpha = max(alpha, new_score)
                 if alpha >= beta:
                     break
-
-            return maximum
         else:  # we minimize score
-            minimum = Game.MAX_SCORE
-            for new_state in game_state.generate_new_states():
-                minimum = min(minimum, self.alpha_beta(new_state, depth - 1, alpha, beta))
-                beta = min(beta, minimum)
+            score = Game.MAX_SCORE
+            new_states = game_state.generate_new_states()
+            for new_state in new_states:
+                new_score, _ = self.alpha_beta(new_state, depth - 1, alpha, beta)
+                if new_score < score:
+                    score = new_score
+                    game_state = new_state
+                beta = min(beta, new_score)
                 if alpha >= beta:
                     break
 
-            return minimum
+        return score, game_state
+
+    def make_move(self, game_state):
+        if Game.ALGORITHM == 0:
+            return self.mini_max(game_state, Game.LEVEL)
+        elif Game.ALGORITHM == 1:
+            return self.alpha_beta(game_state, Game.LEVEL, Game.MIN_SCORE, Game.MAX_SCORE)
+        else:
+            raise Exception('unknown algorithm')
 
 
 if __name__ == '__main__':
+    # asd = GameState()
+    # sc, st = AI().make_move(asd)
+    # Drawer(st).console_print()
     pass
