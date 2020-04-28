@@ -1,5 +1,6 @@
 from copy import deepcopy as cpy
-
+import pygame
+import time
 
 dx = [-1, -1, -1, 0, 0, 1, 1, 1]
 dy = [-1, 0, 1, -1, 1, -1, 0, 1]
@@ -25,14 +26,44 @@ class Game:
 
 
 class Drawer:
-    def __init__(self, game_state):
-        self.game_state = game_state
+    CELL_WIDTH = 70
+    CELL_HEIGHT = 70
+    CIRCLE_RADIUS = 30
 
-    def console_print(self):
-        for line in self.game_state.grid:
-            print(line)
+    BLUE = (102, 153, 255)
+    RED = (255, 102, 102)
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
+
+    def __init__(self):
+        pygame.init()
+        pygame.display.set_caption('REVERSI GAME')
+        self.screen = pygame.display.set_mode(size=(Game.NR_COL * Drawer.CELL_WIDTH, Game.NR_ROW * Drawer.CELL_HEIGHT))
+        self.screen.fill(Drawer.WHITE)
+        pygame.display.update()
+
+    def console_print(self, game_state):
+        print()
+        for i in range(Game.NR_COL):
+            print("   ", i, end="")
+        print()
+        for idx, line in enumerate(game_state.grid):
+            print(idx, line)
 
         print()
+
+    def draw_circle(self, color, center):
+        pygame.draw.circle(self.screen, color, center, Drawer.CIRCLE_RADIUS)
+
+    def draw(self, game_state):
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                if game_state.grid[i][j] == Game.P_MAX:
+                    self.draw_circle(Drawer.BLUE, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
+                elif game_state.grid[i][j] == Game.P_MIN:
+                    self.draw_circle(Drawer.RED, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
+
+        pygame.display.update()
 
 
 class GameState:
@@ -56,6 +87,9 @@ class GameState:
         self.current_player = self.opponent()
 
     def valid_move(self, x, y):
+        if x < 0 or y < 0 or x >= Game.NR_ROW or y >= Game.NR_COL:
+            return False, []
+
         if self.grid[x][y] != Game.EMPTY:
             return False, []
 
@@ -126,6 +160,13 @@ class GameState:
                 new_states.append(self.generate_new_state(lst))
 
         return new_states
+
+    def make_move(self, x, y):
+        fl, lst = self.valid_move(x, y)
+        if fl is False:
+            return False, self
+
+        return True, self.generate_new_state(lst)
 
     # calculates score for Game.P_MAX
     def get_score(self):
@@ -227,8 +268,44 @@ class AI:
             raise Exception('unknown algorithm')
 
 
+class Engine:
+    def __init__(self):
+        self.game_state = GameState()
+        self.drawer = Drawer()
+
+    def run(self):
+        turn = 0
+        while True:
+            self.drawer.console_print(self.game_state)
+            self.drawer.draw(self.game_state)
+
+            if self.game_state.is_final_state():
+                print("game over.")
+                print(self.game_state.get_winner())
+                break
+
+            if turn == 0:
+                try:
+                    x, y = map(int, input("give i and j\n\n").split(' '))
+                except Exception as e:
+                    print("invalid input format, please try again")
+                    continue
+
+                fl, self.game_state = self.game_state.make_move(x, y)
+                if fl is False:
+                    print("invalid move. please try again")
+                    continue
+
+                turn = 1 - turn
+            else:
+                print("AI turn")
+                time.sleep(2)
+                _, self.game_state = AI().make_move(self.game_state)
+                turn = 1 - turn
+            pass
+
+
 if __name__ == '__main__':
-    # asd = GameState()
-    # sc, st = AI().make_move(asd)
-    # Drawer(st).console_print()
+    game_engine = Engine()
+    game_engine.run()
     pass
