@@ -17,6 +17,9 @@ class Game:
 
     ALGORITHM = 0  # 0 for mini max, 1 for alpha-beta
 
+    MIN_SCORE = 0 - 1
+    MAX_SCORE = 8 * 8 + 4 * 8 + 4 + 1
+
     def __init__(self):
         pass
 
@@ -26,7 +29,10 @@ class Drawer:
         self.game_state = game_state
 
     def console_print(self):
-        pass
+        for line in self.game_state.grid:
+            print(line)
+
+        print()
 
 
 class GameState:
@@ -54,9 +60,8 @@ class GameState:
             return False, []
 
         flag = False
-        opponent_disks = []
+        opponent_disks = [[x, y]]
         for k in range(8):
-            cnt = 0
             i = x
             j = y
             current_flag = False
@@ -71,11 +76,10 @@ class GameState:
                 if self.grid[i][j] == Game.EMPTY:
                     break
 
-                if self.grid[i][j] == self.current_player and cnt == 0:
+                if self.grid[i][j] == self.current_player and len(lst) == 0:
                     break
 
                 if self.grid[i][j] == self.opponent():
-                    cnt += 1
                     lst.append([i, j])
                     continue
 
@@ -89,6 +93,20 @@ class GameState:
 
         return flag, opponent_disks
 
+    def can_advance(self):
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                flag, _ = self.valid_move(i, j)
+
+                if flag is True:
+                    return True
+
+        return False
+
+    # we check if grid is full
+    def is_final_state(self):
+        return self.can_advance()
+
     def generate_new_state(self, lst):
         grid = cpy(self.grid)
         for el in lst:
@@ -96,9 +114,6 @@ class GameState:
 
         new_state = GameState(self.opponent(), grid)
         return new_state
-
-    def is_final_state(self):
-        pass
 
     def generate_new_states(self):
         new_states = []
@@ -112,6 +127,67 @@ class GameState:
                 new_states.append(self.generate_new_state(lst))
 
         return new_states
+
+    # calculates score for Game.P_MAX
+    def get_score(self):
+        score = 0
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                if self.grid[i][j] == Game.P_MAX:
+                    if (i == 0 or i == Game.NR_ROW - 1) and (j == 0 or j == Game.NR_COL - 1):
+                        score += 4  # grid corner
+                    elif i == 0 or i == Game.NR_ROW - 1 or j == 0 or j == Game.NR_COL - 1:
+                        score += 2  # grid side
+                    else:
+                        score += 1  # any other cell
+
+        return score
+
+    def count_occurrence(self, ch):
+        return sum([line.count(ch) for line in self.grid])
+
+
+class AI:
+    def __init__(self):
+        pass
+
+    def mini_max(self, game_state, depth):
+        if depth == 0 or game_state.is_final_state():
+            return game_state.get_score()
+        if game_state.current_player == Game.P_MAX:  # we maximize score
+            maximum = Game.MIN_SCORE
+            for new_state in game_state.generate_new_states():
+                maximum = max(maximum, self.mini_max(new_state, depth - 1))
+
+            return maximum
+        else:  # we minimize score
+            minimum = Game.MAX_SCORE
+            for new_state in game_state.generate_new_states():
+                minimum = min(minimum, self.mini_max(new_state, depth - 1))
+
+            return minimum
+
+    def alpha_beta(self, game_state, depth, alpha, beta):
+        if depth == 0 or game_state.is_final_state():
+            return game_state.get_score()
+        if game_state.current_player == Game.P_MAX:  # we maximize score
+            maximum = Game.MIN_SCORE
+            for new_state in game_state.generate_new_states():
+                maximum = max(maximum, self.alpha_beta(new_state, depth - 1, alpha, beta))
+                alpha = max(maximum, alpha)
+                if alpha >= beta:
+                    break
+
+            return maximum
+        else:  # we minimize score
+            minimum = Game.MAX_SCORE
+            for new_state in game_state.generate_new_states():
+                minimum = min(minimum, self.alpha_beta(new_state, depth - 1, alpha, beta))
+                beta = min(beta, minimum)
+                if alpha >= beta:
+                    break
+
+            return minimum
 
 
 if __name__ == '__main__':
