@@ -1,4 +1,6 @@
+from argparse import ArgumentParser
 from copy import deepcopy as cpy
+from timeit import default_timer as timer
 import pygame
 import time
 
@@ -14,12 +16,12 @@ class Game:
     P_MIN = 2
     EMPTY = 0
 
-    LEVEL = 1  # 1, 2, or 3
+    LEVEL = 1
 
     ALGORITHM = 0  # 0 for mini max, 1 for alpha-beta
 
-    MIN_SCORE = 0 - 1
-    MAX_SCORE = 8 * 8 + 4 * 8 + 4 + 1
+    MIN_SCORE = -101
+    MAX_SCORE = 101
 
     def __init__(self):
         pass
@@ -34,7 +36,7 @@ class Drawer:
     RED = (255, 102, 102)
     WHITE = (255, 255, 255)
     BLACK = (0, 0, 0)
-    GREY = (200, 200, 200)
+    GREY = (200, 220, 200)
 
     def __init__(self):
         pygame.init()
@@ -52,8 +54,11 @@ class Drawer:
 
     def console_print(self, game_state):
         print()
+        print("Player", game_state.current_player)
+        print()
+        print("", end=" ")
         for i in range(Game.NR_COL):
-            print("   ", i, end="")
+            print("|", i, end="")
         print()
         for idx, line in enumerate(game_state.grid):
             print(idx, line)
@@ -79,7 +84,7 @@ class Drawer:
         # valid moves
         for i in range(Game.NR_ROW):
             for j in range(Game.NR_COL):
-                fl, _ = game_state.valid_move(i, j)
+                fl, _ = game_state.valid_move(i, j, game_state.current_player)
                 if fl is True:
                     self.draw_circle(Drawer.GREY, (j * Drawer.CELL_WIDTH + Drawer.CELL_WIDTH // 2, i * Drawer.CELL_HEIGHT + Drawer.CELL_HEIGHT // 2))
 
@@ -118,7 +123,7 @@ class GameState:
     def switch_player(self):
         self.current_player = self.opponent()
 
-    def valid_move(self, x, y):
+    def valid_move(self, x, y, player):
         if x < 0 or y < 0 or x >= Game.NR_ROW or y >= Game.NR_COL:
             return False, []
 
@@ -142,14 +147,14 @@ class GameState:
                 if self.grid[i][j] == Game.EMPTY:
                     break
 
-                if self.grid[i][j] == self.current_player and len(lst) == 0:
+                if self.grid[i][j] == player and len(lst) == 0:
                     break
 
-                if self.grid[i][j] == self.opponent():
+                if self.grid[i][j] == self.opponent_player(player):
                     lst.append([i, j])
                     continue
 
-                if self.grid[i][j] == self.current_player:
+                if self.grid[i][j] == player:
                     current_flag = True
                     break
 
@@ -159,10 +164,20 @@ class GameState:
 
         return flag, opponent_disks
 
+    def count_moves(self, player):
+        cnt = 0
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                flag, _ = self.valid_move(i, j, player)
+                if flag is True:
+                    cnt += 1
+
+        return cnt
+
     def can_advance(self):
         for i in range(Game.NR_ROW):
             for j in range(Game.NR_COL):
-                flag, _ = self.valid_move(i, j)
+                flag, _ = self.valid_move(i, j, self.current_player)
 
                 if flag is True:
                     return True
@@ -185,7 +200,7 @@ class GameState:
 
         for i in range(Game.NR_ROW):
             for j in range(Game.NR_COL):
-                flag, lst = self.valid_move(i, j)
+                flag, lst = self.valid_move(i, j, self.current_player)
                 if flag is False:
                     continue
 
@@ -194,7 +209,7 @@ class GameState:
         return new_states
 
     def make_move(self, x, y):
-        fl, lst = self.valid_move(x, y)
+        fl, lst = self.valid_move(x, y, self.current_player)
         if fl is False:
             return False, self
 
@@ -202,18 +217,64 @@ class GameState:
 
     # calculates score for Game.P_MAX
     def get_score(self):
-        score = 0
+        return self.get_score_1()
+
+    def get_score_1(self):
+        p_max_score = 0
+        p_min_score = 0
         for i in range(Game.NR_ROW):
             for j in range(Game.NR_COL):
                 if self.grid[i][j] == Game.P_MAX:
                     if (i == 0 or i == Game.NR_ROW - 1) and (j == 0 or j == Game.NR_COL - 1):
-                        score += 4  # grid corner
+                        p_max_score += 4  # grid corner
                     elif i == 0 or i == Game.NR_ROW - 1 or j == 0 or j == Game.NR_COL - 1:
-                        score += 2  # grid side
+                        p_max_score += 2  # grid side
                     else:
-                        score += 1  # any other cell
+                        p_max_score += 1  # any other cell
+                elif self.grid[i][j] == Game.P_MIN:
+                    if (i == 0 or i == Game.NR_ROW - 1) and (j == 0 or j == Game.NR_COL - 1):
+                        p_min_score += 4  # grid corner
+                    elif i == 0 or i == Game.NR_ROW - 1 or j == 0 or j == Game.NR_COL - 1:
+                        p_min_score += 2  # grid side
+                    else:
+                        p_min_score += 1  # any other cell
 
-        return score
+        return 100 * (p_max_score - p_min_score) / (p_max_score + p_min_score)
+
+    def get_score_2(self):
+        return 0.4 * self.get_parity_score() + 0.3 * self.get_corners_score() + 0.3 * self.get_mobility_score()
+
+    # between -100 and 100
+    def get_parity_score(self):
+        p_max_occ = self.count_occurrence(Game.P_MAX)
+        p_min_occ = self.count_occurrence(Game.P_MIN)
+        return 100 * (p_max_occ - p_min_occ) / (p_max_occ + p_min_occ)
+
+    # between -100 and 100
+    def get_mobility_score(self):
+        p_max_mobility = self.count_moves(Game.P_MAX)
+        p_min_mobility = self.count_moves(Game.P_MIN)
+        if (p_max_mobility + p_min_mobility) > 0:
+            return 100 * (p_max_mobility - p_min_mobility) / (p_max_mobility + p_min_mobility)
+        else:
+            return 0
+
+    # between -100 and 100
+    def get_corners_score(self):
+        p_max_corners_cnt = 0
+        p_min_corners_cnt = 0
+        for i in range(Game.NR_ROW):
+            for j in range(Game.NR_COL):
+                if (i == 0 or i == Game.NR_ROW - 1) and (j == 0 or j == Game.NR_COL - 1):
+                    if self.grid[i][j] == Game.P_MAX:
+                        p_max_corners_cnt += 1
+                    else:
+                        p_min_corners_cnt += 1
+
+        if (p_max_corners_cnt + p_min_corners_cnt) > 0:
+            return 100 * (p_max_corners_cnt - p_min_corners_cnt) / (p_max_corners_cnt + p_min_corners_cnt)
+        else:
+            return 0
 
     def count_occurrence(self, ch):
         return sum([line.count(ch) for line in self.grid])
@@ -313,12 +374,12 @@ class Engine:
 
         return y, x
 
-    def run(self):
+    def game_menu(self):
         nr = 1
         while True:
             try:
                 nr = int(input("Algorithm type:\n  1) Press 1 for mini-max.\n  2) Press 2 for alpha_beta.\n"))
-                if 1 > nr > 2:
+                if nr != 1 and nr != 2:
                     print("Invalid algorithm choice. Please try again.")
                     continue
             except Exception as e:
@@ -329,8 +390,8 @@ class Engine:
 
         while True:
             try:
-                nr = int(input("Chose your color.\n  1) Press 1 for blue (you move first).\n  2) Press 2 for blue (AI moves first).\n"))
-                if 1 > nr > 2:
+                nr = int(input("Choose your color.\n  1) Press 1 for blue (you move first).\n  2) Press 2 for blue (AI moves first).\n"))
+                if nr != 1 and nr != 2:
                     print("Invalid color choice. Please try again.")
                     continue
             except Exception as e:
@@ -342,15 +403,23 @@ class Engine:
 
         while True:
             try:
-                nr = int(input("Chose your difficulty level\n  1) Press 1 for easy.\n  2) Press 2 for medium.\n  3) Press 3 for difficult.\n"))
-                if 1 > nr > 3:
+                nr = int(input("Choose your difficulty level\n  1) Press 1 for easy.\n  2) Press 2 for medium.\n  3) Press 3 for difficult.\n"))
+                if nr != 1 and nr != 2 and nr != 3:
                     print("Invalid difficulty choice. Please try again.")
                     continue
             except Exception as e:
                 print("Bad input format ({}). Please try again.".format(e))
                 continue
             break
-        Game.LEVEL = nr
+        Game.LEVEL = nr + 1
+
+        return turn
+
+    def run_with_gui(self):
+        game_start_time = timer()
+        turn = self.game_menu()
+        your_moves_cnt = 0
+        ai_moves_cnt = 0
 
         game_over = False
         while not game_over:
@@ -362,45 +431,57 @@ class Engine:
                 continue
 
             if turn == 0:
-                # try:
-                #     x, y = map(int, input("give i and j\n\n").split(' '))
-                # except Exception as e:
-                #     print("invalid input format, please try again")
-                #     continue
+                move_start_time = timer()
+                print("Your turn.")
+                made_move = False
+                while not made_move:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            print("You did {} moves".format(your_moves_cnt))
+                            print("AI did {} moves".format(ai_moves_cnt))
+                            your_score = self.game_state.count_occurrence(self.player)
+                            ai_score = self.game_state.count_occurrence(self.game_state.opponent_player(self.player))
+                            print("Your score is {}.".format(your_score))
+                            print("AI's score is {}.\n".format(ai_score))
+                            print("Game total time was {} seconds.\n".format(timer() - game_start_time))
+                            print("You quited game.\nBye.\n")
+                            return
+                        elif event.type == pygame.MOUSEBUTTONDOWN:
+                            mouse_coord = pygame.mouse.get_pos()
+                            x, y = self.get_grid_coordinates(mouse_coord)
+                            # print(x, y)
 
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        print("You quited game.\nBye.\n")
-                        return
-                    elif event.type == pygame.MOUSEBUTTONDOWN:
-                        mouse_coord = pygame.mouse.get_pos()
-                        x, y = self.get_grid_coordinates(mouse_coord)
-                        print(x, y)
+                            fl, self.game_state = self.game_state.make_move(x, y)
+                            if fl is False:
+                                print("Invalid move. Please try again\n")
+                                continue
 
-                        fl, self.game_state = self.game_state.make_move(x, y)
-                        if fl is False:
-                            print("Invalid move. Please try again\n")
-                            continue
-
-                        turn = 1 - turn
+                            made_move = True
+                            turn = 1 - turn
+                            your_moves_cnt += 1
+                            print("Your think time was {} seconds.\n".format(timer() - move_start_time))
+                            break
             else:
-                print("AI's turn")
+                print("AI's turn.")
                 time.sleep(0.5)
+                move_start_time = timer()
                 _, self.game_state = self.AI.make_move(self.game_state)
+                ai_moves_cnt += 1
                 turn = 1 - turn
+                print("AI's think time was {} seconds.\n".format(timer() - move_start_time))
             pass
 
         print("Game over.")
+        print("You did {} moves".format(your_moves_cnt))
+        print("AI did {} moves".format(ai_moves_cnt))
         winner = self.game_state.get_winner()
         your_score = self.game_state.count_occurrence(self.player)
         ai_score = self.game_state.count_occurrence(self.game_state.opponent_player(self.player))
 
         if winner == "Tie":
             print("Game over.\nTie.\n")
-            return
-
-        if self.player == winner:
+        elif self.player == winner:
             print("You won with the score {}-{}.\n".format(your_score, ai_score))
         else:
             print("AI won with the score {}-{}.\n".format(ai_score, your_score))
@@ -413,10 +494,106 @@ class Engine:
                     break
 
         pygame.quit()
+        print("Game total time was {} seconds.\n".format(timer() - game_start_time))
+        print("You quited game.\nBye.\n")
+
+    def run(self):
+        game_start_time = timer()
+        turn = self.game_menu()
+        your_moves_cnt = 0
+        ai_moves_cnt = 0
+
+        game_over = False
+        while not game_over:
+            self.drawer.console_print(self.game_state)
+
+            if self.game_state.is_final_state():
+                game_over = True
+                continue
+
+            if turn == 0:
+                move_start_time = timer()
+                print("Your turn.")
+                made_move = False
+                while not made_move:
+                    line = input("Give i and j\n\n")
+                    if line == "exit":
+                        pygame.quit()
+                        print("You did {} moves".format(your_moves_cnt))
+                        print("AI did {} moves".format(ai_moves_cnt))
+                        your_score = self.game_state.count_occurrence(self.player)
+                        ai_score = self.game_state.count_occurrence(self.game_state.opponent_player(self.player))
+                        print("Your score is {}.".format(your_score))
+                        print("AI's score is {}.\n".format(ai_score))
+                        print("Game total time was {} seconds.\n".format(timer() - game_start_time))
+                        print("You quited game.\nBye.\n")
+                        return
+
+                    try:
+                        x, y = map(int, line.split(' '))
+                    except Exception as e:
+                        print("invalid input format, please try again")
+                        continue
+
+                    # print(x, y)
+
+                    fl, self.game_state = self.game_state.make_move(x, y)
+                    if fl is False:
+                        print("Invalid move. Please try again\n")
+                        continue
+
+                    made_move = True
+                    turn = 1 - turn
+                    your_moves_cnt += 1
+                    print("Your think time was {} seconds.\n".format(timer() - move_start_time))
+            else:
+                print("AI's turn.")
+                time.sleep(0.5)
+                move_start_time = timer()
+                _, self.game_state = self.AI.make_move(self.game_state)
+                ai_moves_cnt += 1
+                turn = 1 - turn
+                print("AI's think time was {} seconds.\n".format(timer() - move_start_time))
+            pass
+
+        print("Game over.")
+        print("You did {} moves".format(your_moves_cnt))
+        print("AI did {} moves".format(ai_moves_cnt))
+        winner = self.game_state.get_winner()
+        your_score = self.game_state.count_occurrence(self.player)
+        ai_score = self.game_state.count_occurrence(self.game_state.opponent_player(self.player))
+
+        if winner == "Tie":
+            print("Game over.\nTie.\n")
+        elif self.player == winner:
+            print("You won with the score {}-{}.\n".format(your_score, ai_score))
+        else:
+            print("AI won with the score {}-{}.\n".format(ai_score, your_score))
+
+        pygame.quit()
+        print("Game total time was {} seconds.\n".format(timer() - game_start_time))
         print("You quited game.\nBye.\n")
 
 
 if __name__ == '__main__':
+    parser = ArgumentParser(usage=__file__ + ' '
+                                             '--gui GUI',
+                            description='Reversi game')
+
+    parser.add_argument('--gui',
+                        dest='gui',
+                        default='0',
+                        help='Flag for gui usage')
+
+    # Parse arguments
+    args = vars(parser.parse_args())
+    gui = args['gui']
+
     game_engine = Engine()
-    game_engine.run()
+
+    if gui == '1':
+        game_engine.run_with_gui()
+    else:
+        game_engine.run()
+
     pass
